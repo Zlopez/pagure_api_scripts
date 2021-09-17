@@ -4,6 +4,7 @@ and print some interesting statistics from those data.
 """
 import json
 
+import arrow
 import click
 import requests
 
@@ -14,12 +15,18 @@ def cli():
     pass
 
 @click.command()
+@click.option("--days-ago", default=30, help="How many days ago to look for closed issues.")
 @click.argument('repository')
-def closed_issues(repository):
+def closed_issues(days_ago: int, repository: str):
     """
     Get closed issues from the repository and print their count.
+
+    Params:
+      days_ago: How many days ago to look for the issues
+      repository: Repository namespace to check
     """
-    url = PAGURE_URL + "api/0/" + repository + "/issues?status=Closed"
+    since = arrow.utcnow().shift(days=-days_ago)
+    url = PAGURE_URL + "api/0/" + repository + "/issues?status=Closed&since=" + str(since.int_timestamp)
     r = requests.get(url)
 
     # click.echo(json.dumps(r.json(), indent=4, sort_keys=True))
@@ -36,7 +43,7 @@ def closed_issues(repository):
             click.echo("Status code: {}".format(r.status_code))
             raise click.UsageError("Pagure API call for url {} returned error".format(data["pagination"]["last"]))
 
-        click.echo(total_issues)
+        click.echo("Total issues: {}".format(total_issues))
     else:
         click.echo("Status code: {}".format(r.status_code))
         raise click.UsageError("Pagure API call for url {} returned error".format(url))
