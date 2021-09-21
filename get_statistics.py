@@ -22,9 +22,11 @@ TROUBLE_VALUES = [
     "high-trouble"
 ]
 
+
 @click.group()
 def cli():
     pass
+
 
 @click.command()
 @click.option("--days-ago", default=30, help="How many days ago to look for closed issues.")
@@ -55,6 +57,123 @@ def closed_issues(days_ago: int, repository: str):
 
     click.echo("Total number of retrieved issues: {}".format(data["total"]))
 
+    aggregated_data = aggregate_stats(data)
+
+    click.echo("")
+    click.echo("Time to Close:")
+    click.echo("* Maximum: {}".format(aggregated_data["maximum_ttc"]))
+    click.echo("* Minimum: {}".format(aggregated_data["minimum_ttc"]))
+    click.echo("* Average: {}".format(aggregated_data["average_ttc"]))
+
+    click.echo("")
+    click.echo("Resolution:")
+    for key, value in aggregated_data["resolution"].items():
+        click.echo("* {}: {}".format(key, value))
+
+    click.echo("")
+    click.echo("Gain:")
+    for key, value in aggregated_data["gain"].items():
+        click.echo("* {}: {}".format(key, value))
+
+    click.echo("")
+    click.echo("Trouble:")
+    for key, value in aggregated_data["trouble"].items():
+        click.echo("* {}: {}".format(key, value))
+
+    click.echo("")
+    click.echo("Ops: {}".format(aggregated_data["ops"]))
+    click.echo("Dev: {}".format(aggregated_data["dev"]))
+
+def aggregate_stats(data: dict):
+    """
+    Aggregate informative statistics from the data.
+
+    Params:
+      data: Data to sift through.
+
+    Returns:
+      Dict with statistics from the data.
+
+    Example output::
+      {
+        "maximum_ttc": 100, # Maximum time to close
+        "minimum_ttc": 1, # Minimum time to close
+        "average_ttc": 10, # Average time to close
+        "resolution": { # Contains all types of resolutions and their count
+          "fixed": 5,
+          ...
+        },
+        "gain": { # Contains all gain tags and their count
+          "low-gain": 10,
+          ...
+        },
+        "trouble": { # Contains all trouble tags and their count
+          "low-trouble": 10,
+          ...
+        },
+        "ops": 10, # How many ops issues were closed
+        "dev": 10, # How many dev issues were closed
+      }
+    """
+    aggregated_data = {
+        "maximum_ttc": 0,
+        "minimum_ttc": 0,
+        "average_ttc": 0,
+        "resolution": {},
+        "gain": {
+            "no_tag": 0,
+        },
+        "trouble": {
+            "no_tag": 0
+        },
+        "ops": 0,
+        "dev": 0,
+    }
+    time_to_close_list = []
+
+    for issue_dict in data["issues"]:
+        for issue in issue_dict.values():
+            # time to close
+            time_to_close_list.append(issue["time_to_close"])
+
+            # resolution
+            if issue["resolution"] in aggregated_data["resolution"]:
+                aggregated_data["resolution"][issue["resolution"]] = aggregated_data["resolution"][issue["resolution"]] + 1
+            else:
+                aggregated_data["resolution"][issue["resolution"]] = 1
+
+            # gain
+            if issue["gain"]:
+                if issue["gain"][0] in aggregated_data["gain"]:
+                    aggregated_data["gain"][issue["gain"][0]] = aggregated_data["gain"][issue["gain"][0]] + 1
+                else:
+                    aggregated_data["gain"][issue["gain"][0]] = 1
+            else:
+                aggregated_data["gain"]["no_tag"] = aggregated_data["gain"]["no_tag"] + 1
+
+            # trouble
+            if issue["trouble"]:
+                if issue["trouble"][0] in aggregated_data["trouble"]:
+                    aggregated_data["trouble"][issue["trouble"][0]] = aggregated_data["trouble"][issue["trouble"][0]] + 1
+                else:
+                    aggregated_data["trouble"][issue["trouble"][0]] = 1
+            else:
+                aggregated_data["trouble"]["no_tag"] = aggregated_data["trouble"]["no_tag"] + 1
+
+            # ops
+            if issue["ops"]:
+                aggregated_data["ops"] = aggregated_data["ops"] + 1
+
+            # dev
+            if issue["dev"]:
+                aggregated_data["dev"] = aggregated_data["dev"] + 1
+
+    # Get data from time to close list
+    aggregated_data["maximum_ttc"] = max(time_to_close_list)
+    aggregated_data["minimum_ttc"] = min(time_to_close_list)
+    aggregated_data["average_ttc"] = sum(time_to_close_list) / len(time_to_close_list)
+
+    return aggregated_data
 
 def get_page_data(url: str):
     """
@@ -67,14 +186,15 @@ def get_page_data(url: str):
     Returns:
       Dictionary containing issues with data we care about.
 
+    Example output::
       {
         "issues": [
           {
             0: { # Id of the issue
               "time_to_close": 10, # Time to close in days
               "resolution": "fixed", # Resolution of the ticket
-              "gain": "low-gain", # Issue gain value tag
-              "trouble": "low-trouble", # Issue trouble value tag
+              "gain": ["low-gain"], # Issue gain value tag
+              "trouble": ["low-trouble"], # Issue trouble value tag
               "ops": True, # Issue has ops tag
               "dev": True, # Issue has dev tag
             },
@@ -108,7 +228,7 @@ def get_page_data(url: str):
         data["total"] = len(data["issues"])
         data["next_page"] = page["pagination"]["next"]
     else:
-        click.echo("Status code '{}' returned for url '{}'. Skipping...".format(r.status_code, url))
+        click.secho(click.style("Status code '{}' returned for url '{}'. Skipping...".format(r.status_code, url), fg="red"))
 
     return data
 
