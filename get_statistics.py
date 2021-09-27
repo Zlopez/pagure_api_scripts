@@ -3,6 +3,7 @@ This script will obtains issues from the specified issue tracker
 and print some interesting statistics from those data.
 """
 import json
+import statistics
 
 import arrow
 import click
@@ -64,6 +65,7 @@ def closed_issues(days_ago: int, repository: str):
     click.echo("* Maximum: {}".format(aggregated_data["maximum_ttc"]))
     click.echo("* Minimum: {}".format(aggregated_data["minimum_ttc"]))
     click.echo("* Average: {}".format(aggregated_data["average_ttc"]))
+    click.echo("* Median: {}".format(aggregated_data["median_ttc"]))
 
     click.echo("")
     click.echo("Resolution:")
@@ -99,6 +101,7 @@ def aggregate_stats(data: dict):
         "maximum_ttc": 100, # Maximum time to close
         "minimum_ttc": 1, # Minimum time to close
         "average_ttc": 10, # Average time to close
+        "median_ttc": 10, # Average time to close
         "resolution": { # Contains all types of resolutions and their count
           "fixed": 5,
           ...
@@ -119,6 +122,7 @@ def aggregate_stats(data: dict):
         "maximum_ttc": 0,
         "minimum_ttc": 0,
         "average_ttc": 0,
+        "median_ttc": 0,
         "resolution": {},
         "gain": {
             "no_tag": 0,
@@ -172,6 +176,7 @@ def aggregate_stats(data: dict):
     aggregated_data["maximum_ttc"] = max(time_to_close_list)
     aggregated_data["minimum_ttc"] = min(time_to_close_list)
     aggregated_data["average_ttc"] = sum(time_to_close_list) / len(time_to_close_list)
+    aggregated_data["median_ttc"] = statistics.median(time_to_close_list)
 
     return aggregated_data
 
