@@ -219,6 +219,10 @@ def get_page_data(url: str):
     if r.status_code == requests.codes.ok:
         page = r.json()
         for issue in page["issues"]:
+            # Skip the ticket if any on the dates is not filled
+            if not issue["closed_at"] or not issue["date_created"]:
+                continue
+
             entry = {
                 issue["id"]: {
                     "time_to_close": (arrow.Arrow.fromtimestamp(issue["closed_at"]) - arrow.Arrow.fromtimestamp(issue["date_created"])).days,
