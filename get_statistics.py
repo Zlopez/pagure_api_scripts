@@ -173,10 +173,11 @@ def aggregate_stats(data: dict):
                 aggregated_data["dev"] = aggregated_data["dev"] + 1
 
     # Get data from time to close list
-    aggregated_data["maximum_ttc"] = max(time_to_close_list)
-    aggregated_data["minimum_ttc"] = min(time_to_close_list)
-    aggregated_data["average_ttc"] = sum(time_to_close_list) / len(time_to_close_list)
-    aggregated_data["median_ttc"] = statistics.median(time_to_close_list)
+    if data["issues"]:
+        aggregated_data["maximum_ttc"] = max(time_to_close_list)
+        aggregated_data["minimum_ttc"] = min(time_to_close_list)
+        aggregated_data["average_ttc"] = sum(time_to_close_list) / len(time_to_close_list)
+        aggregated_data["median_ttc"] = statistics.median(time_to_close_list)
 
     return aggregated_data
 
