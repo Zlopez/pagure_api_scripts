@@ -31,23 +31,30 @@ def cli():
 
 @click.command()
 @click.option("--days-ago", default=30, help="How many days ago to look for closed issues.")
+@click.option("--since", default=None, help="Show results to this day. Expects date in DD.MM.YYYY format (31.12.2021).")
 @click.argument('repository')
-def closed_issues(days_ago: int, repository: str):
+def closed_issues(days_ago: int, since: str, repository: str):
     """
     Get closed issues from the repository and print their count.
 
     Params:
       days_ago: How many days ago to look for the issues
+      since: Limit results to the day set by this argument. Default None will be replaced by `arrow.utcnow()`.
       repository: Repository namespace to check
     """
-    since = arrow.utcnow().shift(days=-days_ago)
+    if since:
+        since = arrow.get(since, "DD.MM.YYYY").shift(days=-days_ago)
+    else:
+        since = arrow.utcnow().shift(days=-days_ago)
+
     next_page = PAGURE_URL + "api/0/" + repository + "/issues?status=Closed&since=" + str(since.int_timestamp)
     data = {
         "issues": [],
         "total": 0,
     }
 
-    click.echo("Retrieving closed issue from {} updated in last {} days".format(repository, days_ago))
+    click.echo("Retrieving closed issues from {} updated in last {} days since {}".format(
+        repository, days_ago, since.shift(days=+days_ago).format("DD.MM.YYYY")))
 
     while next_page:
         page_data = get_page_data(next_page)
