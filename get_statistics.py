@@ -97,6 +97,68 @@ def closed_issues(days_ago: int, till: str, repository: str):
     click.echo("Ops: {}".format(aggregated_data["ops"]))
     click.echo("Dev: {}".format(aggregated_data["dev"]))
 
+@click.command()
+@click.option("--days-ago", default=30, help="How many days ago to look for created issues.")
+@click.option("--till", default=None, help="Show results till this date. Expects date in DD.MM.YYYY format (31.12.2021).")
+@click.argument('repository')
+def created_issues(days_ago: int, till: str, repository: str):
+    """
+    Get created issues from the repository and print their count.
+
+    Params:
+      days_ago: How many days ago to look for the issues
+      till: Limit results to the day set by this argument. Default None will be replaced by `arrow.utcnow()`.
+      repository: Repository namespace to check
+    """
+    if till:
+        till = arrow.get(till, "DD.MM.YYYY")
+    else:
+        till = arrow.utcnow()
+    since_arg = till.shift(days=-days_ago)
+
+    next_page = PAGURE_URL + "api/0/" + repository + "/issues?status=all&since=" + str(since_arg.int_timestamp)
+    data = {
+        "issues": [],
+        "total": 0,
+    }
+
+    click.echo("Retrieving created issues from {} updated in last {} days till {}".format(
+        repository, days_ago, since_arg.shift(days=+days_ago).format("DD.MM.YYYY")))
+
+    while next_page:
+        page_data = get_page_data(next_page, till, since_arg, True)
+        # click.echo(json.dumps(page_data, indent=4))
+        data["issues"] = data["issues"] + page_data["issues"]
+        data["total"] = data["total"] + page_data["total"]
+        next_page = page_data["next_page"]
+
+    for issue in data["issues"]:
+        arrow.get()
+
+    click.echo("Total number of retrieved issues: {}".format(data["total"]))
+
+    aggregated_data = aggregate_stats(data)
+
+    click.echo("")
+    click.echo("Resolution:")
+    for key, value in aggregated_data["resolution"].items():
+        click.echo("* {}: {}".format(key, value))
+
+    click.echo("")
+    click.echo("Gain:")
+    for key, value in aggregated_data["gain"].items():
+        click.echo("* {}: {}".format(key, value))
+
+    click.echo("")
+    click.echo("Trouble:")
+    for key, value in aggregated_data["trouble"].items():
+        click.echo("* {}: {}".format(key, value))
+
+    click.echo("")
+    click.echo("Ops: {}".format(aggregated_data["ops"]))
+    click.echo("Dev: {}".format(aggregated_data["dev"]))
+
+
 def aggregate_stats(data: dict):
     """
     Aggregate informative statistics from the data.
@@ -192,7 +254,7 @@ def aggregate_stats(data: dict):
 
     return aggregated_data
 
-def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow):
+def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow, all: bool = False):
     """
     Gets data from the current page returned by pagination.
     It will filter any issue not closed at time interval specified
@@ -243,8 +305,9 @@ def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow):
 
             closed_at = arrow.Arrow.fromtimestamp(issue["closed_at"])
 
-            if closed_at < since or closed_at > till:
-                continue
+            if not all:
+                if closed_at < since or closed_at > till:
+                    continue
 
             #click.echo("Issue was closed at: {}".format(closed_at.format("DD.MM.YYYY")))
             #click.echo("{} < {} < {}".format(since.format("DD.MM.YYYY"), closed_at.format("DD.MM.YYYY"), till.format("DD.MM.YYYY")))
@@ -270,4 +333,5 @@ def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow):
 
 if __name__ == "__main__":
     cli.add_command(closed_issues)
+    cli.add_command(created_issues)
     cli()
