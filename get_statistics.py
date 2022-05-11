@@ -30,6 +30,66 @@ def cli():
 
 
 @click.command()
+@click.option("--days-ago", default=30, help="How many days ago to look for open issues.")
+@click.option("--till", default=None, help="Show results till this date. Expects date in DD.MM.YYYY format (31.12.2021).")
+@click.argument('repository')
+def open_issues(days_ago: int, till: str, repository: str):
+    """
+    Get open issues from the repository and print their count.
+
+    Params:
+      days_ago: How many days ago to look for the issues
+      till: Limit results to the day set by this argument. Default None will be replaced by `arrow.utcnow()`.
+      repository: Repository namespace to check
+    """
+    if till:
+        till = arrow.get(till, "DD.MM.YYYY")
+    else:
+        till = arrow.utcnow()
+    since_arg = till.shift(days=-days_ago)
+
+    next_page = PAGURE_URL + "api/0/" + repository + "/issues?status=all&since=" + str(since_arg.int_timestamp)
+    data = {
+        "issues": [],
+        "total": 0,
+    }
+
+    click.echo("Retrieving open issues from {} opened in last {} days ({}) till {}".format(
+        repository, days_ago, since_arg.format("DD.MM.YYYY"), since_arg.shift(days=+days_ago).format("DD.MM.YYYY")))
+
+    while next_page:
+        page_data = get_page_data(next_page, till, since_arg, closed=False)
+        # click.echo(json.dumps(page_data, indent=4))
+        data["issues"] = data["issues"] + page_data["issues"]
+        data["total"] = data["total"] + page_data["total"]
+        next_page = page_data["next_page"]
+
+    click.echo("Total number of retrieved issues: {}".format(data["total"]))
+
+    aggregated_data = aggregate_stats(data, closed=False)
+    click.echo("Already closed: {}".format(aggregated_data["closed"]))
+
+    click.echo("")
+    click.echo("Close Resolution:")
+    for key, value in aggregated_data["resolution"].items():
+        click.echo("* {}: {}".format(key, value))
+
+    click.echo("")
+    click.echo("Gain:")
+    for key, value in aggregated_data["gain"].items():
+        click.echo("* {}: {}".format(key, value))
+
+    click.echo("")
+    click.echo("Trouble:")
+    for key, value in aggregated_data["trouble"].items():
+        click.echo("* {}: {}".format(key, value))
+
+    click.echo("")
+    click.echo("Ops: {}".format(aggregated_data["ops"]))
+    click.echo("Dev: {}".format(aggregated_data["dev"]))
+
+
+@click.command()
 @click.option("--days-ago", default=30, help="How many days ago to look for closed issues.")
 @click.option("--till", default=None, help="Show results till this date. Expects date in DD.MM.YYYY format (31.12.2021).")
 @click.argument('repository')
@@ -54,8 +114,8 @@ def closed_issues(days_ago: int, till: str, repository: str):
         "total": 0,
     }
 
-    click.echo("Retrieving closed issues from {} updated in last {} days till {}".format(
-        repository, days_ago, since_arg.shift(days=+days_ago).format("DD.MM.YYYY")))
+    click.echo("Retrieving closed issues from {} updated in last {} days ({}) till {}".format(
+        repository, days_ago, since_arg.format("DD.MM.YYYY"), since_arg.shift(days=+days_ago).format("DD.MM.YYYY")))
 
     while next_page:
         page_data = get_page_data(next_page, till, since_arg)
@@ -63,9 +123,6 @@ def closed_issues(days_ago: int, till: str, repository: str):
         data["issues"] = data["issues"] + page_data["issues"]
         data["total"] = data["total"] + page_data["total"]
         next_page = page_data["next_page"]
-
-    for issue in data["issues"]:
-        arrow.get()
 
     click.echo("Total number of retrieved issues: {}".format(data["total"]))
 
@@ -97,18 +154,20 @@ def closed_issues(days_ago: int, till: str, repository: str):
     click.echo("Ops: {}".format(aggregated_data["ops"]))
     click.echo("Dev: {}".format(aggregated_data["dev"]))
 
-def aggregate_stats(data: dict):
+def aggregate_stats(data: dict, closed: bool = True):
     """
     Aggregate informative statistics from the data.
 
     Params:
       data: Data to sift through.
+      closed: Should we aggregate closed or open issues. Default: True
 
     Returns:
       Dict with statistics from the data.
 
     Example output::
       {
+        "closed": 100, # Number of closed issues
         "maximum_ttc": 100, # Maximum time to close
         "minimum_ttc": 1, # Minimum time to close
         "average_ttc": 10, # Average time to close
@@ -130,6 +189,7 @@ def aggregate_stats(data: dict):
       }
     """
     aggregated_data = {
+        "closed": 0,
         "maximum_ttc": 0,
         "minimum_ttc": 0,
         "average_ttc": 0,
@@ -148,14 +208,18 @@ def aggregate_stats(data: dict):
 
     for issue_dict in data["issues"]:
         for issue in issue_dict.values():
-            # time to close
-            time_to_close_list.append(issue["time_to_close"])
+            if closed:
+                # time to close
+                time_to_close_list.append(issue["time_to_close"])
 
             # resolution
-            if issue["resolution"] in aggregated_data["resolution"]:
-                aggregated_data["resolution"][issue["resolution"]] = aggregated_data["resolution"][issue["resolution"]] + 1
-            else:
-                aggregated_data["resolution"][issue["resolution"]] = 1
+            # Skip the issues that are not closed
+            if issue["resolution"]:
+                if issue["resolution"] in aggregated_data["resolution"]:
+                    aggregated_data["resolution"][issue["resolution"]] = aggregated_data["resolution"][issue["resolution"]] + 1
+                else:
+                    aggregated_data["resolution"][issue["resolution"]] = 1
+                aggregated_data["closed"] = aggregated_data["closed"] + 1
 
             # gain
             if issue["gain"]:
@@ -184,20 +248,26 @@ def aggregate_stats(data: dict):
                 aggregated_data["dev"] = aggregated_data["dev"] + 1
 
     # Get data from time to close list
-    if data["issues"]:
-        aggregated_data["maximum_ttc"] = max(time_to_close_list)
-        aggregated_data["minimum_ttc"] = min(time_to_close_list)
-        aggregated_data["average_ttc"] = sum(time_to_close_list) / len(time_to_close_list)
-        aggregated_data["median_ttc"] = statistics.median(time_to_close_list)
+    if closed:
+        if data["issues"]:
+            aggregated_data["maximum_ttc"] = max(time_to_close_list)
+            aggregated_data["minimum_ttc"] = min(time_to_close_list)
+            aggregated_data["average_ttc"] = sum(time_to_close_list) / len(time_to_close_list)
+            aggregated_data["median_ttc"] = statistics.median(time_to_close_list)
 
     return aggregated_data
 
-def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow):
+def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow, closed: bool = True):
     """
     Gets data from the current page returned by pagination.
-    It will filter any issue not closed at time interval specified
-    by since and till parameters. since < closed_at < till
-    It does some calculations, like time to close etc.
+    If closed is set to True it will filter any issue not
+    closed at time interval specified by since and till parameters.
+    since < closed_at < till
+    It will also calculate time to close.
+
+    If closed is set to False it will filter any issue not
+    opened at time interval specified by since and till parameters.
+    since < date_created < till
 
     Params:
       url: Url for the page
@@ -205,16 +275,35 @@ def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow):
             key of the issue.
       since: Since date for closed issues. This will take in account closed_at
             key of the issue.
+      closed: Should we get closed or open issues. Default: True
 
     Returns:
       Dictionary containing issues with data we care about.
 
     Example output::
+      # if closed is set to True
       {
         "issues": [
           {
             0: { # Id of the issue
               "time_to_close": 10, # Time to close in days
+              "resolution": "fixed", # Resolution of the ticket
+              "gain": ["low-gain"], # Issue gain value tag
+              "trouble": ["low-trouble"], # Issue trouble value tag
+              "ops": True, # Issue has ops tag
+              "dev": True, # Issue has dev tag
+            },
+          },
+        ],
+        "total": 1, # Number of issues on the page
+        "next_page": "https://pagure.io/next_page" # URL for next page
+      }
+
+      # if closed is set to False
+      {
+        "issues": [
+          {
+            0: { # Id of the issue
               "resolution": "fixed", # Resolution of the ticket
               "gain": ["low-gain"], # Issue gain value tag
               "trouble": ["low-trouble"], # Issue trouble value tag
@@ -237,28 +326,51 @@ def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow):
     if r.status_code == requests.codes.ok:
         page = r.json()
         for issue in page["issues"]:
-            # Skip the ticket if any on the dates is not filled
-            if not issue["closed_at"] or not issue["date_created"]:
+            # Skip the ticket if any of the dates is not filled
+            if not issue["date_created"]:
                 continue
+            if closed:
+                if not issue["closed_at"]:
+                    continue
 
-            closed_at = arrow.Arrow.fromtimestamp(issue["closed_at"])
+                closed_at = arrow.Arrow.fromtimestamp(issue["closed_at"])
 
-            if closed_at < since or closed_at > till:
-                continue
+                if closed_at < since or closed_at > till:
+                    continue
 
-            #click.echo("Issue was closed at: {}".format(closed_at.format("DD.MM.YYYY")))
-            #click.echo("{} < {} < {}".format(since.format("DD.MM.YYYY"), closed_at.format("DD.MM.YYYY"), till.format("DD.MM.YYYY")))
+                #click.echo("Issue was closed at: {}".format(closed_at.format("DD.MM.YYYY")))
+                #click.echo("{} < {} < {}".format(since.format("DD.MM.YYYY"), closed_at.format("DD.MM.YYYY"), till.format("DD.MM.YYYY")))
 
-            entry = {
-                issue["id"]: {
-                    "time_to_close": (closed_at - arrow.Arrow.fromtimestamp(issue["date_created"])).days,
-                    "resolution": issue["close_status"],
-                    "gain": [tag for tag in issue["tags"] if tag in GAIN_VALUES],
-                    "trouble": [tag for tag in issue["tags"] if tag in TROUBLE_VALUES],
-                    "ops": "ops" in issue["tags"],
-                    "dev": "dev" in issue["tags"],
+                entry = {
+                    issue["id"]: {
+                        "time_to_close": (closed_at - arrow.Arrow.fromtimestamp(issue["date_created"])).days,
+                        "resolution": issue["close_status"],
+                        "gain": [tag for tag in issue["tags"] if tag in GAIN_VALUES],
+                        "trouble": [tag for tag in issue["tags"] if tag in TROUBLE_VALUES],
+                        "ops": "ops" in issue["tags"],
+                        "dev": "dev" in issue["tags"],
+                    }
                 }
-            }
+
+            else:
+                date_created = arrow.Arrow.fromtimestamp(issue["date_created"])
+
+                if date_created < since or date_created > till:
+                    continue
+
+                #click.echo("Issue was opened at: {}".format(date_created.format("DD.MM.YYYY")))
+                #click.echo("{} < {} < {}".format(since.format("DD.MM.YYYY"), date_created.format("DD.MM.YYYY"), till.format("DD.MM.YYYY")))
+
+                entry = {
+                    issue["id"]: {
+                        "resolution": issue.get("close_status", ""),
+                        "gain": [tag for tag in issue["tags"] if tag in GAIN_VALUES],
+                        "trouble": [tag for tag in issue["tags"] if tag in TROUBLE_VALUES],
+                        "ops": "ops" in issue["tags"],
+                        "dev": "dev" in issue["tags"],
+                    }
+                }
+
             data["issues"].append(entry)
         data["total"] = len(data["issues"])
         data["next_page"] = page["pagination"]["next"]
@@ -270,4 +382,5 @@ def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow):
 
 if __name__ == "__main__":
     cli.add_command(closed_issues)
+    cli.add_command(open_issues)
     cli()
