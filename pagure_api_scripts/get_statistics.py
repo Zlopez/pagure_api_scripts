@@ -2,14 +2,13 @@
 This script will obtains issues from the specified issue tracker
 and print some interesting statistics from those data.
 """
-import json
 import statistics
 
 import arrow
-import click
 import requests
+import logging
 
-PAGURE_URL="https://pagure.io/"
+PAGURE_URL = "https://pagure.io/"
 
 GAIN_VALUES = [
     "low-gain",
@@ -23,136 +22,63 @@ TROUBLE_VALUES = [
     "high-trouble"
 ]
 
-
-@click.group()
-def cli():
-    pass
+_logger = logging.getLogger(__name__)
 
 
-@click.command()
-@click.option("--days-ago", default=30, help="How many days ago to look for open issues.")
-@click.option("--till", default=None, help="Show results till this date. Expects date in DD.MM.YYYY format (31.12.2021).")
-@click.argument('repository')
-def open_issues(days_ago: int, till: str, repository: str):
+def open_issues(till: str, since: str, repository: str):
     """
     Get open issues from the repository and print their count.
 
     Params:
-      days_ago: How many days ago to look for the issues
-      till: Limit results to the day set by this argument. Default None will be replaced by `arrow.utcnow()`.
+      till: Limit results to the day set by this argument
+      since: Limit the result from this date
       repository: Repository namespace to check
     """
-    if till:
-        till = arrow.get(till, "DD.MM.YYYY")
-    else:
-        till = arrow.utcnow()
-    since_arg = till.shift(days=-days_ago)
-
-    next_page = PAGURE_URL + "api/0/" + repository + "/issues?status=all&since=" + str(since_arg.int_timestamp)
+    next_page = PAGURE_URL + "api/0/" + repository + "/issues?status=all&since=" + str(since.int_timestamp)
     data = {
         "issues": [],
         "total": 0,
     }
 
-    click.echo("Retrieving open issues from {} opened in last {} days ({}) till {}".format(
-        repository, days_ago, since_arg.format("DD.MM.YYYY"), since_arg.shift(days=+days_ago).format("DD.MM.YYYY")))
-
     while next_page:
-        page_data = get_page_data(next_page, till, since_arg, closed=False)
+        page_data = get_page_data(next_page, till, since, closed=False)
         # click.echo(json.dumps(page_data, indent=4))
         data["issues"] = data["issues"] + page_data["issues"]
         data["total"] = data["total"] + page_data["total"]
         next_page = page_data["next_page"]
 
-    click.echo("Total number of retrieved issues: {}".format(data["total"]))
-
     aggregated_data = aggregate_stats(data, closed=False)
-    click.echo("Already closed: {}".format(aggregated_data["closed"]))
 
-    click.echo("")
-    click.echo("Close Resolution:")
-    for key, value in aggregated_data["resolution"].items():
-        click.echo("* {}: {}".format(key, value))
-
-    click.echo("")
-    click.echo("Gain:")
-    for key, value in aggregated_data["gain"].items():
-        click.echo("* {}: {}".format(key, value))
-
-    click.echo("")
-    click.echo("Trouble:")
-    for key, value in aggregated_data["trouble"].items():
-        click.echo("* {}: {}".format(key, value))
-
-    click.echo("")
-    click.echo("Ops: {}".format(aggregated_data["ops"]))
-    click.echo("Dev: {}".format(aggregated_data["dev"]))
+    return aggregated_data
 
 
-@click.command()
-@click.option("--days-ago", default=30, help="How many days ago to look for closed issues.")
-@click.option("--till", default=None, help="Show results till this date. Expects date in DD.MM.YYYY format (31.12.2021).")
-@click.argument('repository')
-def closed_issues(days_ago: int, till: str, repository: str):
+def closed_issues(till: str, since: str, repository: str):
     """
     Get closed issues from the repository and print their count.
 
     Params:
       days_ago: How many days ago to look for the issues
-      till: Limit results to the day set by this argument. Default None will be replaced by `arrow.utcnow()`.
+      till: Limit results to the day set by this argument
+      since: Limit the result from this date
       repository: Repository namespace to check
     """
-    if till:
-        till = arrow.get(till, "DD.MM.YYYY")
-    else:
-        till = arrow.utcnow()
-    since_arg = till.shift(days=-days_ago)
-
-    next_page = PAGURE_URL + "api/0/" + repository + "/issues?status=Closed&since=" + str(since_arg.int_timestamp)
+    next_page = PAGURE_URL + "api/0/" + repository + "/issues?status=Closed&since=" + str(since.int_timestamp)
     data = {
         "issues": [],
         "total": 0,
     }
 
-    click.echo("Retrieving closed issues from {} updated in last {} days ({}) till {}".format(
-        repository, days_ago, since_arg.format("DD.MM.YYYY"), since_arg.shift(days=+days_ago).format("DD.MM.YYYY")))
-
     while next_page:
-        page_data = get_page_data(next_page, till, since_arg)
+        page_data = get_page_data(next_page, till, since)
         # click.echo(json.dumps(page_data, indent=4))
         data["issues"] = data["issues"] + page_data["issues"]
         data["total"] = data["total"] + page_data["total"]
         next_page = page_data["next_page"]
 
-    click.echo("Total number of retrieved issues: {}".format(data["total"]))
-
     aggregated_data = aggregate_stats(data)
 
-    click.echo("")
-    click.echo("Time to Close:")
-    click.echo("* Maximum: {}".format(aggregated_data["maximum_ttc"]))
-    click.echo("* Minimum: {}".format(aggregated_data["minimum_ttc"]))
-    click.echo("* Average: {}".format(aggregated_data["average_ttc"]))
-    click.echo("* Median: {}".format(aggregated_data["median_ttc"]))
+    return aggregated_data
 
-    click.echo("")
-    click.echo("Resolution:")
-    for key, value in aggregated_data["resolution"].items():
-        click.echo("* {}: {}".format(key, value))
-
-    click.echo("")
-    click.echo("Gain:")
-    for key, value in aggregated_data["gain"].items():
-        click.echo("* {}: {}".format(key, value))
-
-    click.echo("")
-    click.echo("Trouble:")
-    for key, value in aggregated_data["trouble"].items():
-        click.echo("* {}: {}".format(key, value))
-
-    click.echo("")
-    click.echo("Ops: {}".format(aggregated_data["ops"]))
-    click.echo("Dev: {}".format(aggregated_data["dev"]))
 
 def aggregate_stats(data: dict, closed: bool = True):
     """
@@ -189,6 +115,7 @@ def aggregate_stats(data: dict, closed: bool = True):
       }
     """
     aggregated_data = {
+        "total": data["total"],
         "closed": 0,
         "maximum_ttc": 0,
         "minimum_ttc": 0,
@@ -256,6 +183,7 @@ def aggregate_stats(data: dict, closed: bool = True):
             aggregated_data["median_ttc"] = statistics.median(time_to_close_list)
 
     return aggregated_data
+
 
 def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow, closed: bool = True):
     """
@@ -375,12 +303,6 @@ def get_page_data(url: str, till: arrow.Arrow, since: arrow.Arrow, closed: bool 
         data["total"] = len(data["issues"])
         data["next_page"] = page["pagination"]["next"]
     else:
-        click.secho(click.style("Status code '{}' returned for url '{}'. Skipping...".format(r.status_code, url), fg="red"))
+        _logger.error("Status code '{}' returned for url '{}'. Skipping...".format(r.status_code, url))
 
     return data
-
-
-if __name__ == "__main__":
-    cli.add_command(closed_issues)
-    cli.add_command(open_issues)
-    cli()
