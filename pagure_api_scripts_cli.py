@@ -5,6 +5,7 @@ import arrow
 import click
 
 import pagure_api_scripts.get_statistics as get_statistics
+import pagure_api_scripts.google_docs as google_docs
 
 
 @click.group()
@@ -113,7 +114,46 @@ def closed_issues(days_ago: int, till: str, repository: str):
     click.echo("Dev: {}".format(data["dev"]))
 
 
+@click.command()
+@click.option("--days-ago", default=7, help="How many days ago to look for closed issues.")
+@click.option("--till", default=None, help="Show results till this date. Expects date in DD.MM.YYYY format (31.12.2021).")
+@click.argument("google_spreadsheet")
+@click.argument("repositories", nargs=-1)
+def update_google_spreadsheet(
+        days_ago: int, till: str, google_spreadsheet: str, repositories: tuple
+):
+    """
+    Update google spreadsheet by statistics from specified repositories.
+
+    Params:
+      days_ago: How many days ago to look for the issues
+      till: Limit results to the day set by this argument. Default None will be replaced by `arrow.utcnow()`.
+      repository: Repository namespace to check
+    """
+    if till:
+        till = arrow.get(till, "DD.MM.YYYY")
+    else:
+        till = arrow.utcnow()
+    since_arg = till.shift(days=-days_ago)
+
+    click.echo("Retrieving open and closed issues from {} updated in last {} days ({}) till {}".format(
+        ", ".join(repositories), days_ago, since_arg.format("DD.MM.YYYY"), since_arg.shift(days=+days_ago).format("DD.MM.YYYY")))
+
+    data = {}
+    data["since"] = since_arg
+    data["till"] = till
+    for repository in repositories:
+        data[repository] = {}
+        repository_data = get_statistics.open_issues(till, since_arg, repository)
+        data[repository]["Opened issues"] = repository_data["total"]
+        repository_data = get_statistics.closed_issues(till, since_arg, repository)
+        data[repository]["Closed issues"] = repository_data
+
+    google_docs.add_new_sheet(data, google_spreadsheet)
+
+
 if __name__ == "__main__":
     cli.add_command(closed_issues)
     cli.add_command(open_issues)
+    cli.add_command(update_google_spreadsheet)
     cli()

@@ -25,7 +25,7 @@ TROUBLE_VALUES = [
 _logger = logging.getLogger(__name__)
 
 
-def open_issues(till: str, since: str, repository: str):
+def open_issues(till: arrow.Arrow, since: arrow.Arrow, repository: str):
     """
     Get open issues from the repository and print their count.
 
@@ -52,7 +52,7 @@ def open_issues(till: str, since: str, repository: str):
     return aggregated_data
 
 
-def closed_issues(till: str, since: str, repository: str):
+def closed_issues(till: arrow.Arrow, since: arrow.Arrow, repository: str):
     """
     Get closed issues from the repository and print their count.
 
