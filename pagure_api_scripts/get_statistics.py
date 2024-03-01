@@ -124,9 +124,15 @@ def aggregate_stats(data: dict, closed: bool = True):
         "resolution": {},
         "gain": {
             "no_tag": 0,
+            "low-gain": 0,
+            "medium-gain": 0,
+            "high-gain": 0,
         },
         "trouble": {
-            "no_tag": 0
+            "no_tag": 0,
+            "low-trouble": 0,
+            "medium-trouble": 0,
+            "high-trouble": 0,
         },
         "ops": 0,
         "dev": 0,

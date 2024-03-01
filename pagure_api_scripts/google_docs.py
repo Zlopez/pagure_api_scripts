@@ -1,7 +1,6 @@
 """Script for working with google docs with pagure_api_scripts."""
 import os.path
 
-import arrow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -10,6 +9,9 @@ from googleapiclient.errors import HttpError
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+# Pagure URL
+PAGURE_URL = "https://pagure.io/"
 
 # Ticket resolutions that are considered positive
 POSITIVE_RESOLUTION = [
@@ -99,46 +101,609 @@ def add_new_sheet(data: dict, spreadsheet: str):
 
         requests = []
 
-        # Merge A1:B1
-        requests.append(
-            {
-                "mergeCells": {
-                    "range": {
-                        "sheetId": sheetId,
-                        "startRowIndex": 0,
-                        "endRowIndex": 1,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": 2
+        # Merge cells
+        column = 0
+        for repository in data["repositories"]:
+            # Repository name
+            requests.append(
+                {
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        }
                     }
                 }
-            }
-        )
-
-        # Merge E1:F1
-        requests.append(
-            {
-                "mergeCells": {
-                    "range": {
-                        "sheetId": sheetId,
-                        "startRowIndex": 0,
-                        "endRowIndex": 1,
-                        "startColumnIndex": 4,
-                        "endColumnIndex": 6
+            )
+            # Time to close
+            requests.append(
+                {
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 4,
+                            "endRowIndex": 5,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        }
                     }
                 }
-            }
-        )
+            )
+            # Resolution
+            requests.append(
+                {
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 10,
+                            "endRowIndex": 11,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        }
+                    }
+                }
+            )
+            # Gain
+            requests.append(
+                {
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 21,
+                            "endRowIndex": 22,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        }
+                    }
+                }
+            )
+            # Trouble
+            requests.append(
+                {
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 27,
+                            "endRowIndex": 28,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        }
+                    }
+                }
+            )
+            column += 4
 
-        # Merge I1:J1
+        column = 0
+        # Prepare the ranges with the data
+        for repository in data["repositories"]:
+            # Repository name with link
+            requests.append(
+                {
+                    "updateCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        },
+                        "fields": "*",
+                        "rows": [
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "formulaValue": f"=HYPERLINK(\"{PAGURE_URL + repository + '/issues'}\", \"{repository}\")",
+                                        },
+                                        "userEnteredFormat": {
+                                            "textFormat": {
+                                                "bold": True,
+                                            },
+                                            "horizontalAlignment": "CENTER"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            )
+            # Total Open/Closed issues
+            requests.append(
+                {
+                    "updateCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 1,
+                            "endRowIndex": 3,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        },
+                        "fields": "*",
+                        "rows": [
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Opened issues",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Opened issues"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Closed issues",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["total"],
+                                        },
+                                    },
+                                ]
+                            },
+                        ]
+                    }
+                }
+            )
+            # Time to close
+            requests.append(
+                {
+                    "updateCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 4,
+                            "endRowIndex": 10,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        },
+                        "fields": "*",
+                        "rows": [
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Time to Close (days):",
+                                        },
+                                        "userEnteredFormat": {
+                                            "textFormat": {
+                                                "bold": True,
+                                            },
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Maximum",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["maximum_ttc"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Minimum",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["minimum_ttc"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Average",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["average_ttc"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Median",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["median_ttc"],
+                                        },
+                                    },
+                                ]
+                            },
+                        ]
+                    }
+                }
+            )
+
+            # Resolution
+            requests.append(
+                {
+                    "updateCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 10,
+                            "endRowIndex": 11,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        },
+                        "fields": "*",
+                        "rows": [
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Resolution",
+                                        },
+                                        "userEnteredFormat": {
+                                            "textFormat": {
+                                                "bold": True,
+                                            },
+                                        }
+                                    }
+                                ]
+                            },
+                        ]
+                    }
+                }
+            )
+
+            row = 11
+            # Positive resolutions
+            for resolution in data["repositories"][repository]["Closed issues"]["resolution"]:
+                if resolution in POSITIVE_RESOLUTION:
+                    requests.append(
+                        {
+                            "updateCells": {
+                                "range": {
+                                    "sheetId": sheetId,
+                                    "startRowIndex": row,
+                                    "endRowIndex": row + 1,
+                                    "startColumnIndex": column,
+                                    "endColumnIndex": column + 2
+                                },
+                                "fields": "*",
+                                "rows": [
+                                    {
+                                        "values": [
+                                            {
+                                                "userEnteredValue": {
+                                                    "stringValue": resolution,
+                                                },
+                                                "userEnteredFormat": {
+                                                    "backgroundColor": {
+                                                        "green": 0.9,
+                                                        "red": 0.7,
+                                                        "blue": 0.7
+                                                    },
+                                                }
+                                            },
+                                            {
+                                                "userEnteredValue": {
+                                                    "numberValue": data["repositories"][repository]["Closed issues"]["resolution"][resolution],
+                                                },
+                                                "userEnteredFormat": {
+                                                    "backgroundColor": {
+                                                        "green": 0.9,
+                                                        "red": 0.7,
+                                                        "blue": 0.7
+                                                    },
+                                                }
+                                            },
+                                        ]
+                                    },
+                                ]
+                            }
+                        }
+                    )
+                    row += 1
+
+            # Negative resolutions
+            for resolution in data["repositories"][repository]["Closed issues"]["resolution"]:
+                if resolution in NEGATIVE_RESOLUTION:
+                    requests.append(
+                        {
+                            "updateCells": {
+                                "range": {
+                                    "sheetId": sheetId,
+                                    "startRowIndex": row,
+                                    "endRowIndex": row + 1,
+                                    "startColumnIndex": column,
+                                    "endColumnIndex": column + 2
+                                },
+                                "fields": "*",
+                                "rows": [
+                                    {
+                                        "values": [
+                                            {
+                                                "userEnteredValue": {
+                                                    "stringValue": resolution,
+                                                },
+                                                "userEnteredFormat": {
+                                                    "backgroundColor": {
+                                                        "green": 0.8,
+                                                        "red": 1.0,
+                                                        "blue": 0.8
+                                                    },
+                                                }
+                                            },
+                                            {
+                                                "userEnteredValue": {
+                                                    "numberValue": data["repositories"][repository]["Closed issues"]["resolution"][resolution],
+                                                },
+                                                "userEnteredFormat": {
+                                                    "backgroundColor": {
+                                                        "green": 0.8,
+                                                        "red": 1.0,
+                                                        "blue": 0.8
+                                                    },
+                                                }
+                                            },
+                                        ]
+                                    },
+                                ]
+                            }
+                        }
+                    )
+                    row += 1
+
+            # Gain
+            requests.append(
+                {
+                    "updateCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 21,
+                            "endRowIndex": 26,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        },
+                        "fields": "*",
+                        "rows": [
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Gain",
+                                        },
+                                        "userEnteredFormat": {
+                                            "textFormat": {
+                                                "bold": True,
+                                            },
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "no_tag",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["gain"]["no_tag"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "low-gain",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["gain"]["low-gain"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "medium-gain",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["gain"]["medium-gain"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "high-gain",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["gain"]["high-gain"],
+                                        },
+                                    },
+                                ]
+                            },
+                        ]
+                    }
+                }
+            )
+
+            # Trouble
+            requests.append(
+                {
+                    "updateCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 27,
+                            "endRowIndex": 32,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        },
+                        "fields": "*",
+                        "rows": [
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Trouble",
+                                        },
+                                        "userEnteredFormat": {
+                                            "textFormat": {
+                                                "bold": True,
+                                            },
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "no_tag",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["trouble"]["no_tag"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "low-trouble",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["trouble"]["low-trouble"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "medium-trouble",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["trouble"]["medium-trouble"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "high-trouble",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["trouble"]["high-trouble"],
+                                        },
+                                    },
+                                ]
+                            },
+                        ]
+                    }
+                }
+            )
+
+            # Ops/Dev
+            requests.append(
+                {
+                    "updateCells": {
+                        "range": {
+                            "sheetId": sheetId,
+                            "startRowIndex": 33,
+                            "endRowIndex": 35,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 2
+                        },
+                        "fields": "*",
+                        "rows": [
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Ops",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["ops"],
+                                        },
+                                    },
+                                ]
+                            },
+                            {
+                                "values": [
+                                    {
+                                        "userEnteredValue": {
+                                            "stringValue": "Dev",
+                                        },
+                                    },
+                                    {
+                                        "userEnteredValue": {
+                                            "numberValue": data["repositories"][repository]["Closed issues"]["dev"],
+                                        },
+                                    },
+                                ]
+                            },
+                        ]
+                    }
+                }
+            )
+            column += 4
+
         requests.append(
             {
-                "mergeCells": {
-                    "range": {
+                "autoResizeDimensions": {
+                    "dimensions": {
                         "sheetId": sheetId,
-                        "startRowIndex": 0,
-                        "endRowIndex": 1,
-                        "startColumnIndex": 8,
-                        "endColumnIndex": 10
+                        "dimension": "COLUMNS",
                     }
                 }
             }

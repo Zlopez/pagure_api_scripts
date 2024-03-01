@@ -142,13 +142,15 @@ def update_google_spreadsheet(
     data = {}
     data["since"] = since_arg
     data["till"] = till
+    data["repositories"] = {}
     for repository in repositories:
-        data[repository] = {}
+        data["repositories"][repository] = {}
         repository_data = get_statistics.open_issues(till, since_arg, repository)
-        data[repository]["Opened issues"] = repository_data["total"]
+        data["repositories"][repository]["Opened issues"] = repository_data["total"]
         repository_data = get_statistics.closed_issues(till, since_arg, repository)
-        data[repository]["Closed issues"] = repository_data
+        data["repositories"][repository]["Closed issues"] = repository_data
 
+    click.echo("Data retrieved. Updating google spreadsheet 'https://docs.google.com/spreadsheets/d/{}/edit'".format(google_spreadsheet))
     google_docs.add_new_sheet(data, google_spreadsheet)
 
 
